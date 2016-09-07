@@ -17,7 +17,15 @@ namespace JojoCrowdAi
         [SerializeField]
         public float radius = 1f;
 
-        public Vector3 curVelocity = Vector3.zero;
+		[SerializeField]
+		public float phoHorizontal = 0f;
+		[SerializeField]
+		public float phoVertical = 0f;
+
+		public int[] discomfortGridIDs = new int[4];
+		public float[] discomfortPotentials = new float[4];
+
+		public Vector3 curVelocity = Vector3.zero;
         private float lastTime = 0f;
         private float curTime = 0f;
 

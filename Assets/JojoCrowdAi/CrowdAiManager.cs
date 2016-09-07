@@ -2,6 +2,8 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Net;
+using System.Security.Cryptography;
 using JetBrains.Annotations;
 
 namespace JojoCrowdAi
@@ -33,8 +35,8 @@ namespace JojoCrowdAi
             groups.Add(new GroupInfo());
             groups[0].endPoint = new Vector3(width - 1, height - 1, 0f);
 
-            for(int i=0;i< 1;i++)
-                for (int j = 0; j < 1; j++)
+            for(int i=0;i< 2;i++)
+                for (int j = 0; j < 3; j++)
                 {
                     Member member = new Member();
                     member.position.x = i + 0.5f;
@@ -43,20 +45,19 @@ namespace JojoCrowdAi
                     groups[0].members.Add(member);
                 }
 
-            groups.Add(new GroupInfo());
-            groups[1].color = Color.blue;
-            groups[1].endPoint = new Vector3(0, 0, 0);
-            for (int i = 0; i < 1; i++)
-                for (int j = 0; j < 1; j++)
-                {
-                    Member member = new Member();
-                    member.position.x = width - 1 - i + 0.5f;
-                    member.position.y = height - 1 - j + 0.5f;
+			groups.Add(new GroupInfo());
+			groups[1].color = Color.blue;
+			groups[1].endPoint = new Vector3(0, 0, 0);
+			for(int i = 0; i < 2; i++)
+				for(int j = 0; j < 3; j++) {
+					Member member = new Member();
+					member.position.x = width - 1 - i + 0.5f;
+					member.position.y = height - 1 - j + 0.5f;
 
-                    groups[1].members.Add(member);
-                }
+					groups[1].members.Add(member);
+				}
 
-            DoUpdate();
+			DoUpdate();
             // -------------------------------------------------------------
         }
 
@@ -182,9 +183,12 @@ namespace JojoCrowdAi
         {
             
         }
-
-        // jojohello log
-        public static void CaculateDensity()
+#region about density   
+		private static float exponent = 1f;
+		private static float deltaX = 0f;
+		private static float deltaY = 0f;
+	    private static Vector3 tempPos = Vector3.zero;
+		public static void CaculateDensity()
         {
             if (null == curMapInfo)
                 return;
@@ -192,83 +196,123 @@ namespace JojoCrowdAi
 	        foreach (int key in curMapInfo.grids.Keys)
 	        {
 				curMapInfo.grids[key].pho = 0f;
-				curMapInfo.grids[key].velocityAver = Vector3.zero;
-			}
+				curMapInfo.grids[key].flowVelocity = Vector3.zero;
+		        curMapInfo.grids[key].discomfort = 0f;
+	        }
                 
 
             int groupCount = groups.Count;
-            Member member;
-            float exponent = 1f;
-            int indexX = 0;
-            int indexY = 0;
-            int gridId = -1;
-            float deltaX = 0f;
-            float deltaY = 0f;
-            GridInfo grid = null;
-	        float tempPho = 0f;
-            for (int i = 0; i < groupCount; i++)
-            {
-                int memberCount = groups[i].members.Count;
-                for (int j = 0; j < memberCount; j++)
-                {
-                    member = groups[i].members[j];
-                    indexX = (int)member.position.x;
-                    indexY = (int) member.position.y;
+			Member tempMember;
 
-                    // 找右下角.
-                    if (indexX + 0.5f > member.position.x)
-                        indexX -= 1;
-                    if (indexY + 0.5f > member.position.y)
-                        indexY -= 1;
+			for (int i = 0; i < groupCount; i++)
+			{
+				int memberCount = groups[i].members.Count;
+				for (int j = 0; j < memberCount; j++)
+				{
+					tempMember = groups[i].members[j];
+					AddPersonEffectOnDensity(tempMember, tempMember.position, false);
 
-                    deltaX = member.position.x - (indexX + 0.5f);
-                    deltaY = member.position.y - (indexY + 0.5f);
-
-                    gridId = curMapInfo.PosToId(indexX, indexY);
-                    if (gridId >= 0)
-                    {
-                        grid = curMapInfo.grids[gridId];
-	                    tempPho = Mathf.Pow(Mathf.Min(1 - deltaX, 1 - deltaY), member.radius);
-
-						grid.pho += tempPho;
-						grid.velocityAver += tempPho * member.curVelocity;
-					}
-
-                    gridId = curMapInfo.PosToId(indexX + 1, indexY);
-                    if (gridId >= 0)
-                    {
-                        grid = curMapInfo.grids[gridId];
-						tempPho = Mathf.Pow(Mathf.Min(deltaX, 1 - deltaY), member.radius);
-
-						grid.pho += tempPho;
-						grid.velocityAver += tempPho * member.curVelocity;
-					}
-
-                    gridId = curMapInfo.PosToId(indexX, indexY + 1);
-                    if (gridId >= 0)
-                    {
-                        grid = curMapInfo.grids[gridId];
-						tempPho = Mathf.Pow(Mathf.Min(1 - deltaX, deltaY), member.radius);
-
-						grid.pho += tempPho;
-						grid.velocityAver += tempPho * member.curVelocity;
-					}
-
-                    gridId = curMapInfo.PosToId(indexX + 1, indexY + 1);
-                    if (gridId >= 0)
-                    {
-                        grid = curMapInfo.grids[gridId];
-						tempPho = Mathf.Pow(Mathf.Min(deltaX, deltaY), member.radius);
-
-						grid.pho += tempPho;
-						grid.velocityAver += tempPho * member.curVelocity;
-					}
-                }
-            }
+					// add discomfort area
+					tempPos = tempMember.position + tempMember.curVelocity*0.25f;
+					AddPersonEffectOnDensity(tempMember, tempPos, true);
+				}
+			}
         }
 
-        // 这里计算的是每个组里面的路径消耗.
-        private static Dictionary<int, float> endDict = new Dictionary<int, float>();
+		private static int originalX = 0;
+		private static int originalY = 0;
+		private static int indexX = 0;
+		private static int indexY = 0;
+		private static float phoSelf = 0f;
+		private static float phoRight = 0f;
+		private static float phoButtom = 0f;
+		static private void AddPersonEffectOnDensity(Member member, Vector3 pos, bool isDiscomfort = false)
+		{
+			phoSelf = 0f;
+			phoRight = 0f;
+			phoButtom = 0f;
+
+			originalX = indexX = (int)pos.x;
+			originalY = indexY = (int)pos.y;
+
+			// 找右下角.
+			if(indexX + 0.5f > pos.x)
+				indexX -= 1;
+			if(indexY + 0.5f > pos.y)
+				indexY -= 1;
+
+			deltaX = pos.x - (indexX + 0.5f);
+			deltaY = pos.y - (indexY + 0.5f);
+
+			CaculatePhoForGrid(member, indexX, indexY, 0, isDiscomfort);
+			CaculatePhoForGrid(member, indexX + 1, indexY, 1, isDiscomfort);
+			CaculatePhoForGrid(member, indexX, indexY + 1, 2, isDiscomfort);
+			CaculatePhoForGrid(member, indexX + 1, indexY + 1, 3, isDiscomfort);
+
+			if (isDiscomfort == false)
+			{
+				if (originalX > indexX)
+					member.phoHorizontal = phoSelf + (phoRight - phoSelf)*(originalX + 0.5f - pos.x);
+				else
+					member.phoHorizontal = phoSelf + (phoRight - phoSelf)*(pos.x - originalX - 0.5f);
+
+				if (originalY > indexY)
+					member.phoVertical = phoSelf + (phoButtom - phoSelf)*(originalY + 0.5f - pos.y);
+				else
+					member.phoVertical = phoSelf + (phoButtom - phoSelf)*(pos.y - indexY - 0.5f);
+			}
+		}
+
+		private static int gridId = -1;
+		private static GridInfo tempGrid = null;
+		private static float tempPho = 0f;
+		private static void CaculatePhoForGrid(Member member, int x, int y, int dataIndex, bool isDiscomfort)
+		{
+			gridId = curMapInfo.PosToId(x, y);
+			if(gridId >= 0) {
+				tempGrid = curMapInfo.grids[gridId];
+				switch (dataIndex)
+				{
+					case 0:
+						tempPho = Mathf.Pow(Mathf.Min(1 - deltaX, 1 - deltaY), member.radius);
+						break;
+					case 1:
+						tempPho = Mathf.Pow(Mathf.Min(deltaX, 1 - deltaY), member.radius);
+						break;
+					case 2:
+						tempPho = Mathf.Pow(Mathf.Min(1 - deltaX, deltaY), member.radius);
+						break;
+					case 3:
+						tempPho = Mathf.Pow(Mathf.Min(deltaX, deltaY), member.radius);
+						break;
+				}
+				
+				if(isDiscomfort) {
+					member.discomfortGridIDs[dataIndex] = gridId;
+					member.discomfortPotentials[dataIndex] = tempPho;
+
+					tempGrid.discomfort += tempPho;
+				} else {
+					if(x == originalX && y == originalY) {
+						phoSelf = tempPho;
+					} else if(x != originalX && y == originalY) {
+						phoRight = tempPho;
+					} else if(x == originalX && y != originalY) {
+						phoButtom = tempPho;
+					}
+
+					tempGrid.pho += tempPho;
+					tempGrid.flowVelocity += tempPho * member.curVelocity;
+				}
+				
+			} else if(isDiscomfort) {
+				member.discomfortGridIDs[dataIndex] = -1;
+			}
+		}
+#endregion
+
+		// 这里计算的是每个组里面的路径消耗.
+		private static Dictionary<int, float> endDict = new Dictionary<int, float>();
         private static Dictionary<int, float> prepareDict = new Dictionary<int, float>();
         public static void CaculateCost(GroupInfo group)
         {
@@ -286,8 +330,6 @@ namespace JojoCrowdAi
             float minValue = 0f;
             int curX;
             int curY;
-            int nextX;
-            int nextY;
             do
             {
                 minID = -1;
@@ -347,16 +389,18 @@ namespace JojoCrowdAi
             //group.costDict = endDict;
 
             foreach (int key in curMapInfo.grids.Keys)
-                curMapInfo.grids[key].cost = 0;
+				group.costDict[key] = 0;
             
             foreach (int key in endDict.Keys)
             {
-                curMapInfo.grids[key].cost = endDict[key]; // 这里可能还包括了
-                curMapInfo.grids[key].pathLength = endDict[key];
-            }
+				//curMapInfo.grids[key].cost = endDict[key]; // 这里可能还包括了
+				//curMapInfo.grids[key].pathLength = endDict[key];
+				group.costDict[key] = endDict[key];
+			}
         }
 
-        public static void UpdateMembersParams(GroupInfo group, Member member)
+		private static GridInfo adjoinGrid = null;
+		public static void UpdateMembersParams(GroupInfo group, Member member)
         {
             if (curMapInfo == null)
                 return;
@@ -370,115 +414,227 @@ namespace JojoCrowdAi
             
             GridInfo grid = curMapInfo.grids[id];
             Vector3 midPos = new Vector3(indexX + 0.5f, indexY + 0.5f, 0f);
-            float FaiMX = 0f;
-            float FaiLeft = 0f;
-            float FaiRight = 0f;
-            float FaiTop = 0f;
-            float FaiButton = 0f;
-            float CostLeft = 0f;
-            float CostRight = 0f;
-            float CostTop = 0f;
-            float CostButton = 0f;
+            float faiLeft = 0f;
+            float faiRight = 0f;
+            float faiTop = 0f;
+            float faiButtom = 0f;
+            float costLeft = 0f;
+            float costRight = 0f;
+            float costTop = 0f;
+            float costButtom = 0f;
+	        float costSelf = GetGridCost(id, group, member);
+	        float fsRight = 0f;	// fs means flow speed.
+	        float fsLeft = 0f;
+	        float fsTop = 0f;
+	        float fsButtom = 0f;
+			float desRight = 0f; // ds means density
+			float desLeft = 0f;
+			float desTop = 0f;  
+			float desButtom = 0f;
+			float fsFaiHorizontal = 0f;
+	        float fsFaiVertical = 0f;
+			float desFaiHorizontal = 0f;
+			float desFaiVertical = 0f;
 
-            float AdjoinCost = 0f;
-            GridInfo adjoinGrid = null;
-            
-            // 去顶相邻格子的总消耗，当相邻的格子为不可走的时候，他的消耗为自身所在方格的消耗值，
-            // 等于跟当前格子等势，于是角色在过了中心之后，就无论如何不会再往为阻挡物的格子方向走.
-            adjoinGrid = grid.adjoinGrids[(int)Direction.left];
-            if (adjoinGrid == null || adjoinGrid.isObstruction)
-                CostLeft = grid.cost + 1;
-            else
-                CostLeft = adjoinGrid.cost;
+			// 去顶相邻格子的总消耗，当相邻的格子为不可走的时候，他的消耗为自身所在方格的消耗值，
+			// 等于跟当前格子等势，于是角色在过了中心之后，就无论如何不会再往为阻挡物的格子方向走.
+			GetCostAndFSAdnDesOfDirection(Direction.left,
+				grid,
+				group,
+				member,
+				costSelf,
+				out costLeft, out fsLeft, out desLeft);
 
-            adjoinGrid = grid.adjoinGrids[(int)Direction.right];
-            if (adjoinGrid == null || adjoinGrid.isObstruction)
-                CostRight = grid.cost + 1;
-            else
-                CostRight = adjoinGrid.cost;
+			GetCostAndFSAdnDesOfDirection(Direction.right,
+			   grid,
+			   group,
+			   member,
+			   costSelf,
+			   out costRight, out fsRight, out desRight);
 
-            adjoinGrid = grid.adjoinGrids[(int)Direction.top];
-            if (adjoinGrid == null || adjoinGrid.isObstruction)
-                CostTop = grid.cost + 1;
-            else
-                CostTop = adjoinGrid.cost;
+			GetCostAndFSAdnDesOfDirection(Direction.top,
+				grid,
+				group,
+				member,
+				costSelf,
+				out costTop, out fsTop, out desTop);
 
-            adjoinGrid = grid.adjoinGrids[(int)Direction.buttom];
-            if (adjoinGrid == null || adjoinGrid.isObstruction)
-                CostButton = grid.cost + 1;
-            else
-                CostButton = adjoinGrid.cost;
-            
-            // 这里的运算有大量的类似代码，以后需要提取出来.
-            if (midPos.x - member.position.x > float.Epsilon) // 点靠左.
-            {
-                FaiLeft = (grid.cost - CostLeft)*(1 - (midPos.x - member.position.x));
-                FaiRight = (CostLeft - grid.cost)*(midPos.x - member.position.x);// + grid.cost - CostRight;
-            }
-            else if (member.position.x - midPos.x > float.Epsilon) // 点靠右.
-            {
-                FaiLeft = (CostRight - grid.cost)*(member.position.x - midPos.x);// + grid.cost - CostLeft;
-                FaiRight = (grid.cost - CostRight)*(1 - (member.position.x - midPos.x));
-            }
-            else // 靠中间.
-            {
-                FaiLeft = grid.cost - CostLeft;
-                FaiRight = grid.cost - CostRight;
-            }
+			GetCostAndFSAdnDesOfDirection(Direction.buttom,
+				grid,
+				group,
+				member,
+				costSelf,
+				out costButtom, out fsButtom, out desTop);
 
-            if (midPos.y - member.position.y > float.Epsilon) // 点靠上.
+			// There is a large number of similar code here.
+			// It should be abstract out later.
+			if(midPos.x - member.position.x > float.Epsilon) // clost to left.
             {
-                FaiTop = (grid.cost - CostTop) * (1 - (midPos.y - member.position.y));
-                FaiButton = (CostTop - grid.cost)*(midPos.y - member.position.y);// + grid.cost - CostButton;
-            }
-            else if (member.position.y - midPos.y > float.Epsilon) // 点靠下.
+                faiLeft = (costSelf - costLeft)*(1 - (midPos.x - member.position.x));
+                faiRight = (costLeft - costSelf) *(midPos.x - member.position.x);// + grid.cost - CostRight;
+				
+				fsFaiHorizontal = grid.flowVelocity.x + (fsLeft - grid.flowVelocity.x) * (midPos.x - member.position.x);// + grid.cost - CostRight;
+				desFaiHorizontal = grid.pho + (desLeft - grid.pho) * (midPos.x - member.position.x);
+			}
+            else if (member.position.x - midPos.x > float.Epsilon) // close to right.
             {
-                FaiTop = (CostButton - grid.cost)*(member.position.y - midPos.y);// + grid.cost - CostTop;
-                FaiButton = (grid.cost - CostButton) * (1 - (member.position.y - midPos.y));
-            }
-            else // 靠中间.
+                faiLeft = (costRight - costSelf) *(member.position.x - midPos.x);// + grid.cost - CostLeft;
+                faiRight = (costSelf - costRight)*(1 - (member.position.x - midPos.x));
+
+				fsFaiHorizontal = grid.flowVelocity.x + (fsRight - grid.flowVelocity.x) * (member.position.x - midPos.x);
+				desFaiHorizontal = grid.pho + (desRight - grid.pho) * (member.position.x - midPos.x);
+			}
+            else // clost to mid.
             {
-                FaiTop = grid.cost - CostTop;
-                FaiButton = grid.cost - CostButton;
+                faiLeft = costSelf - costLeft;
+                faiRight = costSelf - costRight;
+				
+				fsFaiHorizontal = grid.flowVelocity.x;
+	            desFaiHorizontal = grid.pho;
             }
 
-            // Fei代表cost的落差，C越大，势越大，角色是从大势往下势去走，所以落差越大，就越往那个方向倾斜.
-            // 当Fai小于0的时候，说明当前所在位置是最低势，不能往对应方向走，跟等势是一样的了.
-            if (FaiLeft < float.Epsilon)
-                FaiLeft = 0f;
-            if (FaiRight < float.Epsilon)
-                FaiRight = 0f;
-            if (FaiTop < float.Epsilon)
-                FaiTop = 0f;
-            if (FaiButton < float.Epsilon)
-                FaiButton = 0f;
+			desFaiHorizontal -= member.phoHorizontal;
+
+            if (midPos.y - member.position.y > float.Epsilon) // close to top.
+            {
+                faiTop = (costSelf - costTop) * (1 - (midPos.y - member.position.y));
+                faiButtom = (costTop - costSelf) *(midPos.y - member.position.y);// + grid.cost - CostButton;
+
+				fsFaiVertical = grid.flowVelocity.y + (fsTop - grid.flowVelocity.y) * (midPos.y - member.position.y);
+				desFaiVertical = grid.pho + (desTop - grid.pho) * (midPos.y - member.position.y);
+			}
+            else if (member.position.y - midPos.y > float.Epsilon) // close to buttom.
+            {
+                faiTop = (costButtom - costSelf) *(member.position.y - midPos.y);// + grid.cost - CostTop;
+                faiButtom = (costSelf - costButtom) * (1 - (member.position.y - midPos.y));
+
+				fsFaiVertical = grid.flowVelocity.y + (fsButtom - grid.flowVelocity.y) * (member.position.y - midPos.y);
+				desFaiVertical = grid.pho + (desButtom - grid.pho) * (member.position.y - midPos.y);
+
+			} else // clost to mid.
+            {
+                faiTop = costSelf - costTop;
+                faiButtom = costSelf - costButtom;
+
+	            fsFaiVertical = grid.flowVelocity.y;
+	            desFaiVertical = grid.pho;
+            }
+
+			desFaiVertical -= member.phoVertical;
+
+			// Fei代表cost的落差，C越大，势越大，角色是从大势往下势去走，所以落差越大，就越往那个方向倾斜.
+			// 当Fai小于0的时候，说明当前所在位置是最低势，不能往对应方向走，跟等势是一样的了.
+			if (faiLeft < float.Epsilon)
+                faiLeft = 0f;
+            if (faiRight < float.Epsilon)
+                faiRight = 0f;
+            if (faiTop < float.Epsilon)
+                faiTop = 0f;
+            if (faiButtom < float.Epsilon)
+                faiButtom = 0f;
             
             Vector3 v = Vector3.zero;
-            if (FaiLeft > FaiRight)
+            if (faiLeft > faiRight)
             {
-                v.x = -FaiLeft* 1000f;
+                v.x = -faiLeft* 1000f;
             }else
             {
-                v.x = FaiRight * 1000f;
+                v.x = faiRight * 1000f;
             }
 
-            if (FaiTop > FaiButton)
+            if (faiTop > faiButtom)
             {
-                v.y = -FaiTop * 1000f;
+                v.y = -faiTop * 1000f;
             }
             else
             {
-                v.y = FaiButton * 1000f;
+                v.y = faiButtom * 1000f;
             }
 
             member.curVelocity = v.normalized * member.maxSpeed;
-        }
+
+			// caculate how the destiny effect on speed.
+			// left or right
+			if(member.curVelocity.x*fsFaiHorizontal < 0)
+				fsFaiHorizontal = 0;
+			
+			if(Mathf.Abs(member.curVelocity.x) > float.Epsilon
+				&& desFaiHorizontal > minPho
+				&& Mathf.Abs(fsFaiHorizontal) < Mathf.Abs(member.curVelocity.x)) 
+			{
+					if(desFaiHorizontal >= MaxPho)
+						member.curVelocity.x = fsFaiHorizontal;
+					else
+						member.curVelocity.x = fsFaiHorizontal + (member.curVelocity.x - fsFaiHorizontal)
+							* (MaxPho - desFaiHorizontal ) / (MaxPho - minPho);
+			}
+
+			if(member.curVelocity.y * fsFaiVertical < 0)
+				fsFaiVertical = 0;
+
+			if(Mathf.Abs(member.curVelocity.y) > float.Epsilon
+				&& desFaiVertical > minPho
+				&& Mathf.Abs(fsFaiVertical) < Mathf.Abs(member.curVelocity.y)) {
+				if(desFaiVertical >= MaxPho)
+					member.curVelocity.y = fsFaiVertical;
+				else
+					member.curVelocity.y = fsFaiVertical + (member.curVelocity.y - fsFaiVertical)
+						* (MaxPho - desFaiVertical) / (MaxPho - minPho);
+			}
+
+			// how to avoid the uncomfortable area.
+		}
 
         public static void SetGroupTarget(GroupInfo group, Vector2 targetPos)
         {
             group.endPoint = targetPos;
             CaculateCost(group);
         }
+
+	    private static void GetCostAndFSAdnDesOfDirection(
+			Direction dir,
+			GridInfo grid,
+			GroupInfo group,
+			Member member,
+			float costSelf, 
+			out float cost, out float fs, out float des)
+	    {
+			adjoinGrid = grid.adjoinGrids[(int)dir];
+			if(adjoinGrid == null || adjoinGrid.isObstruction) {
+				cost = costSelf + 1;
+				fs = 0f;
+				des = 0f;
+			} else {
+				cost = GetGridCost(adjoinGrid.id, group, member);
+				if (dir == Direction.left
+					|| dir == Direction.right)
+					fs = adjoinGrid.flowVelocity.x;
+				else
+					fs = adjoinGrid.flowVelocity.y;
+				des = adjoinGrid.pho;
+			}
+		}
+
+	    static private float GetGridCost(int gridID, GroupInfo group, Member member)
+	    {
+		    float ret = 0f;
+		    if (group.costDict.ContainsKey(gridID))
+			    ret += group.costDict[gridID];
+
+		    if (curMapInfo.grids.ContainsKey(gridID))
+			    ret += curMapInfo.grids[gridID].discomfort;
+
+			for(int i=0; i<4; i++)
+		    {
+			    if (member.discomfortGridIDs[i] != gridID)
+				    continue;
+
+			    ret -= member.discomfortPotentials[i];
+			    break;
+		    }
+
+		    return ret;
+	    }
     }
 }
 

@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using UnityEngine.UI;
 
 namespace JojoCrowdAi
 {
@@ -14,28 +15,30 @@ namespace JojoCrowdAi
 
     public class GridInfo
     {
+	    public int id;
+
         public int x;
         public int y;
 
         public bool isObstruction;
 
-        public float density;
+        //public float pho = 0f;
         public float potential;
 
         public float pho = 0f;  // 密度.
-		public Vector3 velocityAver = Vector3.zero ; // 速度势能平均数.
-        public float pathLength = float.NaN;
-        public float cost = 0;
+		public Vector3 flowVelocity = Vector3.zero ; // 速度势能平均数.
+	    public float discomfort = 0f;
         public GridInfo[] adjoinGrids = new GridInfo[4];
-        public float[] adjoinCostDelta = new float[4];
+        //public float[] adjoinCostDelta = new float[4];
 
-        public GridInfo(int posX, int posY)
+        public GridInfo(int id, int posX, int posY)
         {
+	        this.id = id;
             x = posX;
             y = posY;
 
-            for (int i = 0; i < 4; i++)
-                adjoinCostDelta[i] = float.NaN;
+            //for (int i = 0; i < 4; i++)
+            //    adjoinCostDelta[i] = float.NaN;
         }
     }
 
@@ -58,7 +61,7 @@ namespace JojoCrowdAi
                 for (int j = 0; j < w; j++)
                 {
                     int id = PosToId(j, i);
-                    grids.Add(id, new GridInfo(j, i));
+                    grids.Add(id, new GridInfo(id, j, i));
                 }
 
             for(int i=0; i<h; i++)

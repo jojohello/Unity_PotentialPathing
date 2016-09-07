@@ -8,7 +8,7 @@ namespace JojoCrowdAi
     {
         public Vector3 startPoint = Vector3.zero;
         public Vector3 endPoint = Vector3.zero;
-        //public Dictionary<int, float> costDict = new Dictionary<int, float>();
+        public Dictionary<int, float> costDict = new Dictionary<int, float>();
         public List<Member> members = new List<Member>(); 
 
         public Color color = Color.red;
